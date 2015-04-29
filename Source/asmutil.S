@@ -1,9 +1,9 @@
 ; XMEGA USB Bootloader
 ;
 ; Gabotronics
-; February 2014
+; May 2015
 ;
-; Copyright 2014 Gabriel Anzziani
+; Copyright 2015 Gabriel Anzziani
 ;
 ; This program is distributed under the terms of the GNU General Public License
 ;

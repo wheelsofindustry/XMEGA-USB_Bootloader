@@ -29,10 +29,7 @@
 #define lowbatt     6       // VCC is below 3.15V
 #define autosend    7       // Continuously send data to UART
 
-
-extern uint8_t *Outgoing;
-extern uint8_t *Incoming;
-
 uint8_t ReadCalibrationByte(uint8_t location);	// Read out calibration byte.
 void CCPWrite( volatile uint8_t * address, uint8_t value );
-
+void calc_fw_crcs(uint32_t *app_crc, uint32_t *boot_crc);
+uint8_t hex_to_char(uint8_t hex);

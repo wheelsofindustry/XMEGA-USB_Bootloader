@@ -10,7 +10,15 @@
 #include <util/delay.h>
 #include <avr/wdt.h>
 #include "main.h"
+#include "sp_driver.h"
 #include "usb_xmega.h"
+
+uint8_t		page_buffer[APP_SECTION_PAGE_SIZE];
+uint16_t	page_ptr = 0;
+
+// Bulk transfer buffers
+uint8_t Outgoing[APP_SECTION_PAGE_SIZE];
+uint8_t Incoming[APP_SECTION_PAGE_SIZE];
 
 // Volatile?
 uint8_t ep0_buf_in[USB_EP0SIZE];
@@ -120,7 +128,7 @@ void USB_ResetInterface(void) {
 	endpoints[1].out.CTRL = USB_EP_TYPE_BULK_gc | USB_EP_MULTIPKT_bm | USB_EP_size_to_gc(64);
 	endpoints[1].out.DATAPTR = (uint16_t)Outgoing;
 	endpoints[1].out.CNT = 0;
-	endpoints[1].out.AUXDATA = 256;
+	endpoints[1].out.AUXDATA = APP_SECTION_PAGE_SIZE;           // Match USB transfer with flash page size
 
 	USB.CTRLA		= USB_ENABLE_bm | USB_SPEED_bm | USB_MAXEP; // Enable USB at Full Speed, USB_MAXEP endpoints
 	USB.INTCTRLA	= USB_BUSEVIE_bm | USB_INTLVL1_bm;			// Enable interrupt for Suspend, Resume or Reset Bus events
@@ -150,7 +158,7 @@ ISR(USB_BUSEVENT_vect) {
 
 /* USB transfer complete interrupt includes events about endpoint transfer on all endpoints. */
 ISR(USB_TRNCOMPL_vect) {
-    ONRED();
+    ONRED();    // Turn on red LED
 	if (endpoints[0].out.STATUS & USB_EP_SETUP_bm) {	// Setup transaction complete
 	    USB_Request_Header_t* req = (void *) ep0_buf_out;
 	    if ((req->bmRequestType & CONTROL_REQTYPE_TYPE) == REQTYPE_STANDARD) {
@@ -173,35 +181,147 @@ ISR(USB_TRNCOMPL_vect) {
 		} else EVENT_USB_Device_ControlRequest(req);  // Vendor defined request
 		endpoints[0].out.STATUS &= ~(USB_EP_SETUP_bm | USB_EP_BUSNACK0_bm | USB_EP_TRNCOMPL0_bm);
 	} else if(endpoints[0].out.STATUS & USB_EP_TRNCOMPL0_bm) {	// OUT transaction complete on endpoint 0
-
 		endpoints[0].out.STATUS &= ~(USB_EP_TRNCOMPL0_bm | USB_EP_BUSNACK0_bm);
 	} else if(endpoints[1].out.STATUS & USB_EP_TRNCOMPL0_bm) {  // OUT transaction complete on endpoint 1
     	endpoints[1].out.CNT = 0;
-	    endpoints[1].out.AUXDATA = 256;
+	    endpoints[1].out.AUXDATA = APP_SECTION_PAGE_SIZE;
 		endpoints[1].out.STATUS &= ~(USB_EP_BUSNACK0_bm | USB_EP_BUSNACK1_bm | USB_EP_TRNCOMPL0_bm | USB_EP_TRNCOMPL1_bm);
 	}
-	OFFRED();
 	USB.FIFORP=0;   // Workaround to clear TRINF flag
 	USB.INTFLAGSBCLR=USB_SETUPIF_bm|USB_TRNIF_bm;
+	OFFRED();       // Turn off red LED
 }
 
-void WriteByte(uint8_t i, uint8_t value);
-
-/** Event handler for the library USB Control Request reception event. */
+// Event handler for the library USB Control Request reception event.
 static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* req) {
 	uint8_t *p;
 	uint8_t i=0;
-    RTC.CNT=0;  // Clear screen saver timer
+	uint16_t	addr;
+	addr = *(uint16_t *)(ep0_buf_out+1);
 	if ((req->bmRequestType & CONTROL_REQTYPE_TYPE) == REQTYPE_VENDOR) {
 		switch(req->bRequest) {
-
-			case 0xBB: // disconnect from USB, reset
+		    case CMD_NOP:           // no-op
+    	    break;
+		    case CMD_RESET_POINTER: // write to RAM page buffer
+		        page_ptr = 0;
+		        return;
+		    break;
+		    case CMD_ERASE_APP_SECTION: // erase entire application section
+		        SP_WaitForSPM();
+		        SP_EraseApplicationSection();
+		        return;
+		    case CMD_READ_FLASH_CRCS:   // calculate application and bootloader section CRCs
+		        SP_WaitForSPM();
+		        calc_fw_crcs((uint32_t *)&ep0_buf_in[3], (uint32_t *)&ep0_buf_in[7]);
+		    break;
+		    case CMD_REQ_INFO:      // Send device's info
+		        ep0_buf_in[0] = MCU.DEVID0;     // XMEGA Device ID
+		        ep0_buf_in[1] = MCU.DEVID1;     // XMEGA Device ID
+		        ep0_buf_in[2] = MCU.DEVID2;     // XMEGA Device ID
+		        ep0_buf_in[3] = MCU.REVID;      // XMEGA Revision ID
+/*
+    i->version = 1;
+    i->page_size = APP_SECTION_PAGE_SIZE;
+    i->app_section_end = APP_SECTION_END;
+    i->entry_jmp_pointer = (uint32_t) (unsigned) &enterBootloader;
+    strncpy(i->hw_product, xstringify(HW_PRODUCT), 16);
+    strncpy(i->hw_version, xstringify(HW_VERSION), 16);
+    USB_ep0_send(sizeof(BootloaderInfo));    
+*/                
+		    break;
+/*
+            case REQ_START_WRITE:
+				page = req->wIndex;
+				pageOffs = 0;
+				USB_ep_start_bank(1, 0, pageBuf, 0);
+			break;
+            case REQ_CRC_APP:
+				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
+				USB_ep_in_start(0, sizeof(uint32_t));
+				return;
+            case REQ_CRC_BOOT:
+				*(uint32_t*)ep0_buf_in = SP_BootCRC();
+				USB_ep_in_start(0, sizeof(uint32_t));
+				return;
+*/            
+		    case CMD_READ_FUSES:    // read fuses
+		        ep0_buf_in[3] = SP_ReadFuseByte(0);
+		        ep0_buf_in[4] = SP_ReadFuseByte(1);
+		        ep0_buf_in[5] = SP_ReadFuseByte(2);
+		        ep0_buf_in[6] = 0xFF;
+		        ep0_buf_in[7] = SP_ReadFuseByte(4);
+		        ep0_buf_in[8] = SP_ReadFuseByte(5);
+		    break;
+		    case CMD_WRITE_PAGE:    // write RAM page buffer to application section page
+		        if (addr > (APP_SECTION_SIZE / APP_SECTION_PAGE_SIZE)) { // out of range
+    		        ep0_buf_in[1] = 0xFF;
+    		        ep0_buf_in[2] = 0xFF;
+    		        break;
+		        }
+		        SP_WaitForSPM();
+		        SP_LoadFlashPage(page_buffer);
+		        SP_WriteApplicationPage(APP_SECTION_START + ((uint32_t)addr * APP_SECTION_PAGE_SIZE));
+		    break;
+		    case CMD_READ_PAGE: // read application page to RAM buffer and return first 32 bytes
+		        if (addr > (APP_SECTION_SIZE / APP_SECTION_PAGE_SIZE)) { // out of range
+    		        ep0_buf_in[1] = 0xFF;
+    		        ep0_buf_in[2] = 0xFF;
+		        }
+		        else {
+    		        memcpy_P(page_buffer, (const void *)((APP_SECTION_START) + (APP_SECTION_PAGE_SIZE * addr)), APP_SECTION_PAGE_SIZE);
+    		        memcpy(&ep0_buf_in[3], page_buffer, 32);
+    		        page_ptr = 0;
+		        }
+		    break;
+		    case CMD_ERASE_USER_SIG_ROW:    // erase user signature row
+		        SP_WaitForSPM();
+		        SP_EraseUserSignatureRow();
+		    break;
+		    case CMD_WRITE_USER_SIG_ROW:    // write RAM buffer to user signature row
+		        SP_WaitForSPM();
+		        SP_LoadFlashPage(page_buffer);
+		        SP_WriteUserSignatureRow();
+		    break;
+		    case CMD_READ_USER_SIG_ROW: // read user signature row to RAM buffer and return first 32 bytes
+		        if (addr > (USER_SIGNATURES_PAGE_SIZE - 32)) {
+    		        ep0_buf_in[1] = 0xFF;
+    		        ep0_buf_in[2] = 0xFF;
+		        }
+		        else {
+    		        memcpy_P(page_buffer, (const void *)(USER_SIGNATURES_SIZE + addr), USER_SIGNATURES_SIZE);
+    		        memcpy(&ep0_buf_in[3], page_buffer, 32);
+    		        page_ptr = 0;
+		        }
+	        break;
+		    case CMD_READ_SERIAL:
+            {
+    		    uint8_t	j = 3;
+    		    uint8_t b;
+    		    for (uint8_t i = 0; i < 6; i++) {
+        		    b = SP_ReadCalibrationByte(offsetof(NVM_PROD_SIGNATURES_t, LOTNUM0) + i);
+        		    ep0_buf_in[j++] = hex_to_char(b >> 4);
+        		    ep0_buf_in[j++] = hex_to_char(b & 0x0F);
+    		    }
+    		    ep0_buf_in[j++] = '-';
+    		    b = SP_ReadCalibrationByte(offsetof(NVM_PROD_SIGNATURES_t, LOTNUM0) + 6);
+    		    ep0_buf_in[j++] = hex_to_char(b >> 4);
+    		    ep0_buf_in[j++] = hex_to_char(b & 0x0F);
+    		    ep0_buf_in[j++] = '-';
+    		    for (uint8_t i = 7; i < 11; i++) {
+        		    b = SP_ReadCalibrationByte(offsetof(NVM_PROD_SIGNATURES_t, LOTNUM0) + i);
+        		    ep0_buf_in[j++] = hex_to_char(b >> 4);
+        		    ep0_buf_in[j++] = hex_to_char(b & 0x0F);
+    		    }
+    		    ep0_buf_in[j] = '\0';
+            }                
+   		    break;
+			case CMD_RESET_DEVICE: // disconnect from USB, reset
     			USB_ep_in_start(0, 0);
 			    USB_ep0_wait_for_complete();
                 cli();
-                _delay_ms(10);
+                delay_ms(10);
                 USB.CTRLB &= ~USB_ATTACH_bm;    // disconnects the device from the USB lines
-                _delay_ms(100);
+                delay_ms(100);
                 CCPWrite(&RST.CTRL, RST_SWRST_bm);  // Software Reset!                
             break;
 /*		    default:    // Unknown request

@@ -6,7 +6,6 @@
 #include <avr/pgmspace.h>
 #include <avr/eeprom.h>
 #include <util/delay.h>
-#include "sp_driver.h"
 #include "usb_xmega.h"
 #include "Descriptors.h"
 #include "main.h"
@@ -31,73 +30,7 @@ FUSES = {
     EESAVE = [ ]
     BODLVL = 2V8    */
 
-uint8_t *Outgoing;
-uint8_t *Incoming;
-
-/*
-#define HW_PRODUCT XPROTOWATCH
-#define HW_VERSION 1.4
-
-#define REQ_INFO		0xB0    // Returns a BootloaderInfo with info about the device
-typedef struct{
-    uint8_t magic[4]; // String 0x90 0x90 0xBB 0x01
-    uint8_t version;
-    uint8_t DEVID0;   // Device/Revision ID from MCU. See XMEGA AU Manual p46
-    uint8_t DEVID1;
-    uint8_t DEVID2;
-    uint8_t REVID;
-    uint16_t page_size;  // Page size in bytes
-    uint32_t app_section_end; // Byte address of end of flash. Add one for flash size
-    uint32_t entry_jmp_pointer; // App code can jump to this pointer to enter the bootloader
-    char hw_product[16];
-    char hw_version[16];
-} BootloaderInfo;
-
-#define REQ_ERASE		0xB1    // Erases the application section
-#define REQ_START_WRITE 0xB2    // Sets the write pointer to the page address passed in wIndex.
-// Data written to bulk endpoint 1 will be written at this address, and the
-// address will be incremented automatically. The transfer is complete when a
-// packet of less than 64 bytes is written.
-#define REQ_CRC_APP		0xB3   // Return a CRC of the application section
-#define REQ_CRC_BOOT	0xB4   // Return a CRC of the boot section
-#define REQ_RESET	    0xBF
-// After acknowledging this request, the bootloader disables USB and resets
-// the microcontroller
-
-#define CONCAT_HIDDEN(a, b, c) a##b##c
-#define PINCTRL(n) CONCAT_HIDDEN(PIN, n, CTRL)
-
-#define xstringify(s) stringify(s)
-#define stringify(s) #s
-
-/// Flash page number where received data will be written
-uint16_t page;
-
-/// Byte offset into flash page of next data to be received
-uint16_t pageOffs;
-
-/// Buffer of incoming flash page
-uint8_t pageBuf[APP_SECTION_PAGE_SIZE];
-
-void pollEndpoint(void);
-
-
-void reset_into_bootloader(void) __attribute__ ((noinline));
-void reset_into_bootloader(void){
-    PMIC.CTRL = 0;
-    bootloaderflag = BOOTLOADER_MAGIC;
-    CCP = CCP_IOREG_gc;
-    RST.CTRL = RST_SWRST_bm;
-    while(1);
-}
-
-/// Jump target at known address to call from application code to switch to bootloader
-extern void enterBootloader(void) __attribute__((used, naked, section(".boot-entry")));
-void enterBootloader(void){
-    reset_into_bootloader();
-}
-*/
-int main(void){
+int main(void) {
     // Clock Settings
     // USB Clock
     OSC.DFLLCTRL = OSC_RC32MCREF_USBSOF_gc; // Configure DFLL for 48MHz, calibrated by USB SOF
@@ -105,22 +38,11 @@ int main(void){
     DFLLRC32M.COMP1 = 0x1B; // Xmega AU manual, p41
     DFLLRC32M.COMP2 = 0xB7;
     DFLLRC32M.CTRL = DFLL_ENABLE_bm;
-    
-    OSC.XOSCCTRL = 0xCB;    // Crystal type 0.4-16 MHz XTAL - 16K CLK Start Up time
-    OSC.PLLCTRL = 0xC2;     // XOSC is PLL Source - 2x Factor (32MHz)
-    OSC.CTRL = OSC_RC2MEN_bm | OSC_RC32MEN_bm | OSC_XOSCEN_bm;
-    _delay_ms(2);
-    // Switch to internal 2MHz if crystal fails
-    if(!testbit(OSC.STATUS,OSC_XOSCRDY_bp)) {   // Check XT ready flag
-        OSC.XOSCCTRL = 0x00;    // Disable external oscillators
-        // Not entering, comment to save
-        //OSC.PLLCTRL = 0x10;     // 2MHz is PLL Source - 16x Factor (32MHz)
-    }
-    OSC.CTRL = OSC_RC2MEN_bm | OSC_RC32MEN_bm | OSC_PLLEN_bm | OSC_XOSCEN_bm;
-    _delay_ms(2);
+
+    OSC.PLLCTRL = 0x10;                         // 2MHz is PLL Source - 16x Factor (32MHz)
+    OSC.CTRL = OSC_RC2MEN_bm | OSC_RC32MEN_bm | OSC_PLLEN_bm | OSC_XOSCEN_bm;   // Enable 2MHz and 32MHz oscillators and PLL
+    delay_ms(2);                                // Wait for PLL ready
     CCPWrite(&CLK.CTRL, CLK_SCLKSEL_PLL_gc);    // Switch to PLL clock
-    // Clock OK!
-    OSC.CTRL = OSC_RC32MEN_bm | OSC_PLLEN_bm | OSC_XOSCEN_bm;    // Disable internal 2MHz
 
     // PORTS CONFIGURATION
     PORTCFG.VPCTRLA = 0x41; // VP1 Map to PORTE, VP0 Map to PORTB
@@ -169,74 +91,6 @@ int main(void){
         while (1) { }
     }
 }
-
-/*
-/// Pack the ep0 input buffer with a response to REQ_INFO
-void fillInfoStruct(void){
-    BootloaderInfo *i=(BootloaderInfo*)ep0_buf_in;
-    i->magic[0] = 0x90;
-    i->magic[1] = 0x90;
-    i->magic[2] = 0xBB;
-    i->magic[3] = 0x01;
-    i->version = 1;
-    i->DEVID0 = MCU.DEVID0;
-    i->DEVID1 = MCU.DEVID1;
-    i->DEVID2 = MCU.DEVID2;
-    i->REVID = MCU.REVID;
-    i->page_size = APP_SECTION_PAGE_SIZE;
-    i->app_section_end = APP_SECTION_END;
-    i->entry_jmp_pointer = (uint32_t) (unsigned) &enterBootloader;
-    strncpy(i->hw_product, xstringify(HW_PRODUCT), 16);
-    strncpy(i->hw_version, xstringify(HW_VERSION), 16);
-}
-
-// Event handler for the library USB Control Request reception event.
-void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* req) {
-	uint8_t *p;
-	uint8_t i=0;
-    RTC.CNT=0;  // Clear screen saver timer
-	if ((req->bmRequestType & CONTROL_REQTYPE_TYPE) == REQTYPE_VENDOR) {
-		switch(req->bRequest) {
-            case REQ_INFO:
-				fillInfoStruct();
-				USB_ep0_send(sizeof(BootloaderInfo));
-				return;
-            case REQ_ERASE:
-				SP_EraseApplicationSection();
-			break;
-            case REQ_START_WRITE:
-				page = req->wIndex;
-				pageOffs = 0;
-				USB_ep_start_bank(1, 0, pageBuf, 0);
-			break;
-            case REQ_CRC_APP:
-				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
-				USB_ep_in_start(0, sizeof(uint32_t));
-				return;
-            case REQ_CRC_BOOT:
-				*(uint32_t*)ep0_buf_in = SP_BootCRC();
-				USB_ep_in_start(0, sizeof(uint32_t));
-				return;
-            case REQ_RESET:
-				cli();
-				USB_ep_in_start(0, 0);
-				USB_ep0_enableOut();
-				USB_ep_wait(0x80); // Wait for the status stage to complete
-				_delay_ms(10);
-				USB.CTRLB &= ~USB_ATTACH_bm; // USB Detach
-				_delay_ms(100);
-				bootloaderflag = 0;
-				CCP = CCP_IOREG_gc;
-				RST.CTRL = RST_SWRST_bm;
-				while(1) {};
-//		    default:    // Unknown request
-//    			endpoints[0].out.CTRL |= USB_EP_STALL_bm;
-//	    		endpoints[0].in.CTRL |= USB_EP_STALL_bm;
-		}
-        USB_ep_in_start(0, 0);
-	}
-}
-*/
 
 // From Application Note AVR1003
 void CCPWrite( volatile uint8_t * address, uint8_t value ) {
@@ -287,6 +141,35 @@ uint8_t ReadCalibrationByte(uint8_t location) {
     NVM_CMD = NVM_CMD_NO_OPERATION_gc;
     return result;
 }
+
 void delay_ms(uint8_t n) {
     for(;n;n--) _delay_ms(1);
+}
+
+// Calculate app section and bootloader CRC32 values
+void calc_fw_crcs(uint32_t *app_crc, uint32_t *boot_crc) {
+    uint32_t address;
+    // application
+    CRC.CTRL = CRC_RESET_RESET1_gc;
+    CRC.CTRL = CRC_CRC32_bm | CRC_SOURCE_IO_gc;
+    for(address = APP_SECTION_START; address < (APP_SECTION_END + 1); address++)
+    CRC.DATAIN = pgm_read_byte_far(address);
+    CRC.STATUS = CRC_BUSY_bm;
+    *app_crc = (uint32_t)CRC.CHECKSUM0 | ((uint32_t)CRC.CHECKSUM1 << 8) | ((uint32_t)CRC.CHECKSUM2 << 16) | ((uint32_t)CRC.CHECKSUM3 << 24);
+    // bootloader
+    CRC.CTRL = CRC_RESET_RESET1_gc;
+    CRC.CTRL = CRC_CRC32_bm | CRC_SOURCE_IO_gc;
+    for(address = BOOT_SECTION_START; address < (BOOT_SECTION_END + 1); address++)
+    CRC.DATAIN = pgm_read_byte_far(address);
+    CRC.STATUS = CRC_BUSY_bm;
+    *boot_crc = (uint32_t)CRC.CHECKSUM0 | ((uint32_t)CRC.CHECKSUM1 << 8) | ((uint32_t)CRC.CHECKSUM2 << 16) | ((uint32_t)CRC.CHECKSUM3 << 24);
+    CRC.CTRL = 0;
+    RAMPZ = 0;		// clean up after pgm_read_byte_far()
+}
+
+// Convert lower nibble to hex char
+uint8_t hex_to_char(uint8_t hex) {
+    if (hex < 10) hex += '0';
+    else          hex += 'A' - 10;
+    return(hex);
 }

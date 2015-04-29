@@ -9,6 +9,22 @@
 
 #pragma once
 
+#define	CMD_NOP						0xB0
+#define CMD_RESET_POINTER			0xB1
+#define CMD_READ_BUFFER				0xB2
+#define CMD_ERASE_APP_SECTION		0xB3
+#define CMD_READ_FLASH_CRCS			0xB4
+#define CMD_REQ_INFO			    0xB5
+#define CMD_READ_FUSES				0xB6
+#define CMD_WRITE_PAGE				0xB7
+#define CMD_READ_PAGE				0xB8
+#define CMD_ERASE_USER_SIG_ROW		0xB9
+#define CMD_WRITE_USER_SIG_ROW		0xBA
+#define CMD_READ_USER_SIG_ROW		0xBC
+#define CMD_READ_SERIAL				0xBD
+
+#define CMD_RESET_DEVICE            0xBF
+
 #define CPU_TO_LE16(x) x
 
 #include "StdDescriptors.h"
