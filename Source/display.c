@@ -10,18 +10,6 @@ uint8_t   u8CursorX, u8CursorY;
 
 // System 3x6 (char #20 to #96) 
 const uint8_t Fonts[] PROGMEM = {
-    0x10,0x3E,0x10, // Line Feed            // 0x14
-    0x10,0x10,0x1E, // Carriage Return      // 0x15
-    0x30,0x0C,0x02, // long /               // 0x16
-    0x38,0x20,0x38, // u                    // 0x17
-    0x28,0x3C,0x08,//0x0A,0x0F,0x02, // up arrow             // 0x18
-    0x05,0x0F,0x04, // down arrow           // 0x19
-    0x00,0x00,0x38, // first part of m      // 0x1A
-    0x18,0x08,0x38, // second part of m     // 0x1B
-    0x30,0x0C,0x02, // first part of /div   // 0x1C
-    0x28,0x3E,0x00, // second part of /div  // 0x1D
-    0x18,0x20,0x18, // third part of /div   // 0x1E
-    0x38,0x26,0x38, // delta                // 0x1F
     0x00,0x00,0x00, // Space                // 0x20 Valid ASCII characters from here
     0x00,0x2E,0x00, // !
     0x06,0x00,0x06, // "
@@ -141,11 +129,6 @@ void GLCD_setting(void) {
     sei();
 }
 
-// Set pixel on display buffer
-void set_pixel(uint8_t x, uint8_t y) {
-    Disp_send.display_data[((uint16_t)(y<<4)&0xFF80) + x] |= (uint8_t)(0x01 << (y & 0x07));
-}
-
 // OR byte on display buffer
 void write_display(uint8_t data) {
     Disp_send.display_data[((uint16_t)(u8CursorY<<7)) + (u8CursorX++)] |= data;
@@ -159,30 +142,17 @@ Print a char on the LCD
 void GLCD_Putchar(char u8Char) {
     uint16_t pointer;
 	uint8_t data,u8CharColumn=0;
-	pointer = (unsigned int)(Fonts)+(u8Char-20)*(3);
+	pointer = (unsigned int)(Fonts)+(u8Char-0x20)*(3);
     if(u8Char!='\n') {
        	/* Draw a char */
     	while (u8CharColumn < 3)	{
             data = pgm_read_byte_near(pointer++);
-		    if(testbit(Misc,negative)) data = ~(data|128);
 		    write_display(data);
 		    u8CharColumn++;
 	    }
     }
-    // Special characters
-    if(u8Char==0x1C) {       // Begin long 'd' character
-        write_display(0x30);
-    }
-    else if(u8Char==0x1D) {  // Complete long 'd' character
-        write_display(0x38);
-        u8CursorX++;
-    }
-    else if(u8Char==0x1A) {  // Complete long 'm' character
-        write_display(0x08);
-    }
-    else if(u8CursorX < 128) {  // if not then insert a space before next letter
+    if(u8CursorX < 128) {  // if not then insert a space before next letter
 		data = 0;
-		if(testbit(Misc,negative)) data = 127;
 		write_display(data);
 	}
     if(u8CursorX>=128 || u8Char=='\n') {    // Next line

@@ -28,4 +28,6 @@
 #define CH1ADC 0x0224   // ADCA CH0.RESL
 #define CH2ADC 0x022C   // ADCA CH1.RESL
 
+extern const char HW_Info[];     // Hardware information
+
 #endif

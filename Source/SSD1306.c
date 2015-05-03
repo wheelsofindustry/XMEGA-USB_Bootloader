@@ -89,7 +89,7 @@ Send instruction to the LCD
 	LcdInstructionWrite (uint8_t u8Instruction)
 		u8Instruction = Instruction to send to the LCDCHSIZE 2 2469
 -------------------------------------------------------------------------------*/
-void LcdInstructionWrite (uint8_t u8Instruction) {
+void LcdInstructionWrite(uint8_t u8Instruction) {
     clrbit(LCD_CTRL, LCD_CS);			// Select
     clrbit(LCD_CTRL,LCD_RS);            // Instruction mode
     USARTD0.DATA= u8Instruction;

@@ -30,6 +30,8 @@ FUSES = {
     EESAVE = [ ]
     BODLVL = 2V8    */
 
+const char FW_Info[] PROGMEM = "GABOOT! FW 0.01";     // Firmware info, max 15 char + NULL
+
 int main(void) {
     // Clock Settings
     // USB Clock
@@ -85,7 +87,8 @@ int main(void) {
         // Initialize LCD
         GLCD_LcdInit();
         GLCD_setting();
-        tiny_printp(0,0,PSTR("BOOTLOADER v1.0"));
+        tiny_printp(0,0,FW_Info);
+        tiny_printp(0,1,HW_Info);
         dma_display();
 
         while (1) { }
@@ -144,27 +147,6 @@ uint8_t ReadCalibrationByte(uint8_t location) {
 
 void delay_ms(uint8_t n) {
     for(;n;n--) _delay_ms(1);
-}
-
-// Calculate app section and bootloader CRC32 values
-void calc_fw_crcs(uint32_t *app_crc, uint32_t *boot_crc) {
-    uint32_t address;
-    // application
-    CRC.CTRL = CRC_RESET_RESET1_gc;
-    CRC.CTRL = CRC_CRC32_bm | CRC_SOURCE_IO_gc;
-    for(address = APP_SECTION_START; address < (APP_SECTION_END + 1); address++)
-    CRC.DATAIN = pgm_read_byte_far(address);
-    CRC.STATUS = CRC_BUSY_bm;
-    *app_crc = (uint32_t)CRC.CHECKSUM0 | ((uint32_t)CRC.CHECKSUM1 << 8) | ((uint32_t)CRC.CHECKSUM2 << 16) | ((uint32_t)CRC.CHECKSUM3 << 24);
-    // bootloader
-    CRC.CTRL = CRC_RESET_RESET1_gc;
-    CRC.CTRL = CRC_CRC32_bm | CRC_SOURCE_IO_gc;
-    for(address = BOOT_SECTION_START; address < (BOOT_SECTION_END + 1); address++)
-    CRC.DATAIN = pgm_read_byte_far(address);
-    CRC.STATUS = CRC_BUSY_bm;
-    *boot_crc = (uint32_t)CRC.CHECKSUM0 | ((uint32_t)CRC.CHECKSUM1 << 8) | ((uint32_t)CRC.CHECKSUM2 << 16) | ((uint32_t)CRC.CHECKSUM3 << 24);
-    CRC.CTRL = 0;
-    RAMPZ = 0;		// clean up after pgm_read_byte_far()
 }
 
 // Convert lower nibble to hex char

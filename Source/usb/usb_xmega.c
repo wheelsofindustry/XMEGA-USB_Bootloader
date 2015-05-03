@@ -10,6 +10,7 @@
 #include <util/delay.h>
 #include <avr/wdt.h>
 #include "main.h"
+#include "hardware.h"
 #include "sp_driver.h"
 #include "usb_xmega.h"
 
@@ -33,7 +34,7 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
 static inline void USB_handleSetAddress(USB_Request_Header_t* req) {
 	uint8_t    DeviceAddress = (req -> wValue & 0x7F);
 	endpoints[0].out.STATUS &= ~(USB_EP_SETUP_bm | USB_EP_BUSNACK0_bm);
-	USB_ep_in_start(0, 0);
+	USB_ep0_in_start(0);
 	while (!(endpoints[0].in.STATUS & USB_EP_TRNCOMPL0_bm)); // wait for status stage to complete
 	USB.ADDR = DeviceAddress;
 	USB_DeviceState = (DeviceAddress) ? DEVICE_STATE_Addressed : DEVICE_STATE_Default;
@@ -74,7 +75,7 @@ static inline void USB_Device_GetInternalSerialDescriptor(void) {
 	SignatureDescriptor->Header.Size = USB_STRING_LEN(INTERNAL_SERIAL_LENGTH_BITS / 4);
 
 	USB_Device_GetSerialString(SignatureDescriptor->UnicodeString);
-	USB_ep_in_start(0, sizeof(*SignatureDescriptor));
+	USB_ep0_in_start(sizeof(*SignatureDescriptor));
 }
 #endif
 
@@ -97,7 +98,7 @@ static inline void USB_handleGetDescriptor(USB_Request_Header_t* req) {
 }
 
 static inline void USB_handleSetConfiguration(USB_Request_Header_t* req) {
-	USB_ep_in_start(0, 0);
+	USB_ep0_in_start(0);
 	USB_Device_ConfigurationNumber = (uint8_t)(req -> wValue);
 
 	if (USB_Device_ConfigurationNumber) USB_DeviceState = DEVICE_STATE_Configured;
@@ -142,7 +143,7 @@ void USB_ep0_send_progmem(const uint8_t* addr, uint8_t size) {
 	while (remaining--) {
 		*buf++ = pgm_read_byte(addr++);
 	}
-	USB_ep_in_start(0, size);
+	USB_ep0_in_start(size);
 }
 
 /* USB bus event interrupt includes :
@@ -166,15 +167,15 @@ ISR(USB_TRNCOMPL_vect) {
 			    case REQ_GetStatus:
 			        ep0_buf_in[0] = 0;	// No remote wakeup, no self power
 			        ep0_buf_in[1] = 0;
-			        USB_ep_in_start(0, 2);
+			        USB_ep0_in_start(2);
 			    break;
 			    case REQ_ClearFeature:
-			    case REQ_SetFeature:    USB_ep_in_start(0, 0);    		    break;
+			    case REQ_SetFeature:    USB_ep0_in_start(0);    		    break;
 			    case REQ_SetAddress:    USB_handleSetAddress(req);          break;
 			    case REQ_GetDescriptor: USB_handleGetDescriptor(req);       break;
 			    case REQ_GetConfiguration:
 			        ep0_buf_in[0] = USB_Device_ConfigurationNumber;
-			        USB_ep_in_start(0, 1);
+			        USB_ep0_in_start(1);
 			    break;
 			    case REQ_SetConfiguration: USB_handleSetConfiguration(req); break;
 		    }
@@ -200,35 +201,31 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
 	addr = *(uint16_t *)(ep0_buf_out+1);
 	if ((req->bmRequestType & CONTROL_REQTYPE_TYPE) == REQTYPE_VENDOR) {
 		switch(req->bRequest) {
-		    case CMD_NOP:           // no-op
-    	    break;
+		    case CMD_REQ_INFO:                          // Send device's info
+		        memcpy_P(ep0_buf_in, FW_Info, 16);      // Firmware information
+		        memcpy_P(&ep0_buf_in[16], HW_Info, 16); // Hardware information
+		        ep0_buf_in[32] = MCU.DEVID0,            // XMEGA Device ID
+		        ep0_buf_in[33] = MCU.DEVID1,            // XMEGA Device ID
+		        ep0_buf_in[34] = MCU.DEVID2,            // XMEGA Device ID
+		        ep0_buf_in[35] = MCU.REVID,             // XMEGA Revision ID
+		        *(uint16_t *)(&ep0_buf_in[36]) = APP_SECTION_PAGE_SIZE,     // Flash page size
+		        *(uint32_t *)(&ep0_buf_in[40]) = APP_SECTION_SIZE,          // Flash size
+		        *(uint16_t *)(&ep0_buf_in[42]) = EEPROM_PAGE_SIZE,          // EEPROM page size
+		        *(uint32_t *)(&ep0_buf_in[46]) = EEPROM_SIZE;               // EEPROM size
+                USB_ep0_in_start(48);   // Sending 48 bytes
+		        return;
 		    case CMD_RESET_POINTER: // write to RAM page buffer
 		        page_ptr = 0;
-		        return;
 		    break;
 		    case CMD_ERASE_APP_SECTION: // erase entire application section
 		        SP_WaitForSPM();
 		        SP_EraseApplicationSection();
-		        return;
-		    case CMD_READ_FLASH_CRCS:   // calculate application and bootloader section CRCs
+            break;
+		    case CMD_REQ_CRC_APP:   // calculate application and bootloader section CRCs
 		        SP_WaitForSPM();
-		        calc_fw_crcs((uint32_t *)&ep0_buf_in[3], (uint32_t *)&ep0_buf_in[7]);
-		    break;
-		    case CMD_REQ_INFO:      // Send device's info
-		        ep0_buf_in[0] = MCU.DEVID0;     // XMEGA Device ID
-		        ep0_buf_in[1] = MCU.DEVID1;     // XMEGA Device ID
-		        ep0_buf_in[2] = MCU.DEVID2;     // XMEGA Device ID
-		        ep0_buf_in[3] = MCU.REVID;      // XMEGA Revision ID
-/*
-    i->version = 1;
-    i->page_size = APP_SECTION_PAGE_SIZE;
-    i->app_section_end = APP_SECTION_END;
-    i->entry_jmp_pointer = (uint32_t) (unsigned) &enterBootloader;
-    strncpy(i->hw_product, xstringify(HW_PRODUCT), 16);
-    strncpy(i->hw_version, xstringify(HW_VERSION), 16);
-    USB_ep0_send(sizeof(BootloaderInfo));    
-*/                
-		    break;
+				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
+				USB_ep0_in_start(sizeof(uint32_t));
+				return true;
 /*
             case REQ_START_WRITE:
 				page = req->wIndex;
@@ -238,25 +235,26 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
             case REQ_CRC_APP:
 				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
 				USB_ep_in_start(0, sizeof(uint32_t));
-				return;
+				return;*/
             case REQ_CRC_BOOT:
 				*(uint32_t*)ep0_buf_in = SP_BootCRC();
-				USB_ep_in_start(0, sizeof(uint32_t));
+				USB_ep0_in_start(sizeof(uint32_t));
 				return;
-*/            
 		    case CMD_READ_FUSES:    // read fuses
-		        ep0_buf_in[3] = SP_ReadFuseByte(0);
-		        ep0_buf_in[4] = SP_ReadFuseByte(1);
-		        ep0_buf_in[5] = SP_ReadFuseByte(2);
-		        ep0_buf_in[6] = 0xFF;
-		        ep0_buf_in[7] = SP_ReadFuseByte(4);
-		        ep0_buf_in[8] = SP_ReadFuseByte(5);
-		    break;
+		        ep0_buf_in[0] = SP_ReadFuseByte(0);
+		        ep0_buf_in[1] = SP_ReadFuseByte(1);
+		        ep0_buf_in[2] = SP_ReadFuseByte(2);
+		        ep0_buf_in[3] = 0xFF;
+		        ep0_buf_in[4] = SP_ReadFuseByte(4);
+		        ep0_buf_in[5] = SP_ReadFuseByte(5);
+                USB_ep0_in_start(6);   // Sending 48 bytes
+		        return;
 		    case CMD_WRITE_PAGE:    // write RAM page buffer to application section page
 		        if (addr > (APP_SECTION_SIZE / APP_SECTION_PAGE_SIZE)) { // out of range
     		        ep0_buf_in[1] = 0xFF;
     		        ep0_buf_in[2] = 0xFF;
-    		        break;
+                    USB_ep0_in_start(2);   // Sending 2 bytes
+    		        return;
 		        }
 		        SP_WaitForSPM();
 		        SP_LoadFlashPage(page_buffer);
@@ -266,6 +264,8 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
 		        if (addr > (APP_SECTION_SIZE / APP_SECTION_PAGE_SIZE)) { // out of range
     		        ep0_buf_in[1] = 0xFF;
     		        ep0_buf_in[2] = 0xFF;
+                    USB_ep0_in_start(2);   // Sending 2 bytes
+                    return;
 		        }
 		        else {
     		        memcpy_P(page_buffer, (const void *)((APP_SECTION_START) + (APP_SECTION_PAGE_SIZE * addr)), APP_SECTION_PAGE_SIZE);
@@ -286,6 +286,8 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
 		        if (addr > (USER_SIGNATURES_PAGE_SIZE - 32)) {
     		        ep0_buf_in[1] = 0xFF;
     		        ep0_buf_in[2] = 0xFF;
+                    USB_ep0_in_start(2);   // Sending 2 bytes
+                    return;
 		        }
 		        else {
     		        memcpy_P(page_buffer, (const void *)(USER_SIGNATURES_SIZE + addr), USER_SIGNATURES_SIZE);
@@ -316,7 +318,7 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
             }                
    		    break;
 			case CMD_RESET_DEVICE: // disconnect from USB, reset
-    			USB_ep_in_start(0, 0);
+    			USB_ep0_in_start(0);
 			    USB_ep0_wait_for_complete();
                 cli();
                 delay_ms(10);
@@ -328,6 +330,6 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
     			endpoints[0].out.CTRL |= USB_EP_STALL_bm;
 	    		endpoints[0].in.CTRL |= USB_EP_STALL_bm;*/
 		}
-        USB_ep_in_start(0, 0);
+        USB_ep0_in_start(0);
 	}
 }

@@ -9,20 +9,20 @@
 
 #pragma once
 
-#define	CMD_NOP						0xB0
+// Bootloader protocol
+#define CMD_REQ_INFO			    0xB0
 #define CMD_RESET_POINTER			0xB1
 #define CMD_READ_BUFFER				0xB2
 #define CMD_ERASE_APP_SECTION		0xB3
-#define CMD_READ_FLASH_CRCS			0xB4
-#define CMD_REQ_INFO			    0xB5
-#define CMD_READ_FUSES				0xB6
-#define CMD_WRITE_PAGE				0xB7
-#define CMD_READ_PAGE				0xB8
-#define CMD_ERASE_USER_SIG_ROW		0xB9
-#define CMD_WRITE_USER_SIG_ROW		0xBA
-#define CMD_READ_USER_SIG_ROW		0xBC
-#define CMD_READ_SERIAL				0xBD
-
+#define CMD_REQ_CRC_APP			    0xB4
+#define REQ_CRC_BOOT                0xB6
+#define CMD_READ_FUSES				0xB7
+#define CMD_WRITE_PAGE				0xB8
+#define CMD_READ_PAGE				0xB9
+#define CMD_ERASE_USER_SIG_ROW		0xBA
+#define CMD_WRITE_USER_SIG_ROW		0xBC
+#define CMD_READ_USER_SIG_ROW		0xBD
+#define CMD_READ_SERIAL				0xBE
 #define CMD_RESET_DEVICE            0xBF
 
 #define CPU_TO_LE16(x) x
@@ -95,9 +95,9 @@ extern volatile uint8_t USB_Device_ConfigurationNumber;
 
 void USB_ResetInterface(void);	// Initialize USB module and endpoints
 
-static inline void USB_ep_in_start(uint8_t ep, uint16_t size) {
-	endpoints[ep].in.CNT = size;
-	endpoints[ep].in.STATUS &= ~(USB_EP_TRNCOMPL0_bm | USB_EP_BUSNACK0_bm | USB_EP_OVF_bm);
+static inline void USB_ep0_in_start(uint16_t size) {
+	endpoints[0].in.CNT = size;
+	endpoints[0].in.STATUS &= ~(USB_EP_TRNCOMPL0_bm | USB_EP_BUSNACK0_bm | USB_EP_OVF_bm);
 }
 
 void USB_ep0_send_progmem(const uint8_t* addr, uint8_t size);

@@ -226,6 +226,10 @@
       <SubType>compile</SubType>
       <Link>usb_xmega.c</Link>
     </Compile>
+    <Compile Include="hardware.c">
+      <SubType>compile</SubType>
+      <Link>hardware.c</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(AVRSTUDIO_EXE_PATH)\\Vs\\Compiler.targets" />
 </Project>
