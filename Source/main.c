@@ -84,13 +84,10 @@ int main(void) {
         sei();      // Enable global interrupts
     
         USB_ResetInterface();
-        // Initialize LCD
         GLCD_LcdInit();
-        GLCD_setting();
         tiny_printp(0,0,FW_Info);
         tiny_printp(0,1,HW_Info);
         dma_display();
-
         while (1) { }
     }
 }

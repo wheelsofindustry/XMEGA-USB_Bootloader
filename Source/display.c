@@ -69,64 +69,12 @@ const uint8_t Fonts[] PROGMEM = {
     0x36,0x08,0x36, // X
     0x0E,0x30,0x0E, // Y
     0x32,0x2A,0x26, // Z
-    0x00,0x3E,0x22, // [
-    0x04,0x08,0x10, // /*\*/
-    0x22,0x3E,0x00, // ]
-    0x04,0x02,0x04, // ^
-    0x40,0x40,0x40, // _
-    0x02,0x04,0x00, // `   // 0x60
-    0x34,0x2c,0x38, // a
-    0x3e,0x24,0x18, // b
-    0x18,0x24,0x24, // c
-    0x18,0x24,0x3e, // d
-    0x18,0x34,0x2c, // e
-    0x08,0x3c,0x0a, // f
-    0x58,0x54,0x3c, // g
-    0x3e,0x04,0x38, // h
-    0x00,0x3a,0x00, // i
-    0x40,0x3a,0x00, // j
-    0x3e,0x18,0x24, // k
-    0x00,0x1e,0x20, // l
-    0x3c,0x0c,0x3c, // m
-    0x3c,0x04,0x38, // n
-    0x18,0x24,0x18, // o
-    0x7c,0x24,0x18, // p
-    0x18,0x24,0x7c, // q
-    0x38,0x04,0x04, // r
-    0x28,0x3c,0x14, // s
-    0x04,0x3e,0x24, // t
-    0x3c,0x20,0x3c, // u
-    0x1c,0x20,0x1c, // v
-    0x3c,0x30,0x3c, // w
-    0x24,0x18,0x24, // x
-    0x0c,0x50,0x3c, // y
-    0x34,0x3c,0x2c, // z
-    0x08,0x36,0x22, // {
-    0x00,0x36,0x00, // |
-    0x22,0x36,0x08, // }
-    0x04,0x06,0x02, // ~
-    0x3e,0x3e,0x3e, // DEL - full block
 };
 
 // Clear display buffer
 void clr_display(void) {
     for(uint16_t i=0; i<DISPLAY_DATA_SIZE; i++) Disp_send.display_data[i]=0;
     lcd_goto(0,0);
-}
-
-void GLCD_setting(void) {
-    cli();
-    if(testbit(Display, flip)) {
-        LcdInstructionWrite(LCD_SET_SCAN_NOR);   // direction
-        LcdInstructionWrite(LCD_SET_SEG_REMAP1);
-    }
-    else {
-        LcdInstructionWrite(LCD_SET_SCAN_FLIP);   // direction
-        LcdInstructionWrite(LCD_SET_SEG_REMAP0);
-    }
-    if(testbit(Display, disp_inv)) LcdInstructionWrite(LCD_DISP_REV);   // invert
-    else LcdInstructionWrite(LCD_DISP_NOR);   // no invert
-    sei();
 }
 
 // OR byte on display buffer
@@ -160,18 +108,6 @@ void GLCD_Putchar(char u8Char) {
     }
 }
 
-/*-------------------------------------------------------------------------------
-Print a string on the LCD from a string in program memory
-	GLCD_Printf (uint8_t *au8Text) 
-		*au8Text = string to display
--------------------------------------------------------------------------------*/
-void lcd_putsp (const char *ptr) {
-    char c;
-    while ((c=pgm_read_byte(ptr++)) != 0x00) {
-        GLCD_Putchar(c);
-    }
-}
-
 // Print Number
 void printN(uint8_t Data) {
     uint8_t d=0x30;
@@ -186,5 +122,6 @@ void printN(uint8_t Data) {
 // Print small font text at x,y from program memory
 void tiny_printp(uint8_t x, uint8_t y, const char *ptr) {
     lcd_goto(x,y);
-    lcd_putsp(ptr);
+    char c;
+    while ((c=pgm_read_byte(ptr++)) != 0x00) GLCD_Putchar(c);
 }

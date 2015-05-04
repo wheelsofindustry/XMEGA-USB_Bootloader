@@ -29,7 +29,6 @@ extern uint8_t u8CursorX, u8CursorY;
 
 /* EXTERN Function Prototype(s) */
 void GLCD_LcdInit(void);
-void GLCD_setting(void);
 void GLCD_LcdOff(void);
 void lcd_putsp(const char *);
 void GLCD_Putchar (char);

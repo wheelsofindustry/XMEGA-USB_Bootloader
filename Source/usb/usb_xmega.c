@@ -226,20 +226,15 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
 				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
 				USB_ep0_in_start(sizeof(uint32_t));
 				return true;
-/*
-            case REQ_START_WRITE:
+/*          case REQ_START_WRITE:
 				page = req->wIndex;
 				pageOffs = 0;
 				USB_ep_start_bank(1, 0, pageBuf, 0);
 			break;
-            case REQ_CRC_APP:
-				*(uint32_t*)ep0_buf_in = SP_ApplicationCRC();
-				USB_ep_in_start(0, sizeof(uint32_t));
-				return;*/
             case REQ_CRC_BOOT:
 				*(uint32_t*)ep0_buf_in = SP_BootCRC();
 				USB_ep0_in_start(sizeof(uint32_t));
-				return;
+				return;*/
 		    case CMD_READ_FUSES:    // read fuses
 		        ep0_buf_in[0] = SP_ReadFuseByte(0);
 		        ep0_buf_in[1] = SP_ReadFuseByte(1);
@@ -326,9 +321,6 @@ static inline void EVENT_USB_Device_ControlRequest(struct USB_Request_Header* re
                 delay_ms(100);
                 CCPWrite(&RST.CTRL, RST_SWRST_bm);  // Software Reset!                
             break;
-/*		    default:    // Unknown request
-    			endpoints[0].out.CTRL |= USB_EP_STALL_bm;
-	    		endpoints[0].in.CTRL |= USB_EP_STALL_bm;*/
 		}
         USB_ep0_in_start(0);
 	}
